@@ -4,7 +4,6 @@ module alu ( // arithmetic logic unit
     input wire [2:0] opcode,        // código da operação
     input wire signed [15:0] a,     // operando A (registrador)
     input wire signed [15:0] b,     // operando B (registrador)
-    input wire signed [15:0] imm,   // immediate
     output reg signed [15:0] result // resultado final
 );
 
@@ -21,18 +20,16 @@ module alu ( // arithmetic logic unit
     // parte combinacional: calcula resultado
     always @(*) begin
         case (opcode)
-            ADD:     alu_out = a + b;
-            ADDI:    alu_out = a + imm;
-            SUB:     alu_out = a - b;
-            SUBI:    alu_out = a - imm;
-            MUL:     alu_out = a * imm;
-            default: alu_out = 0; // outros opcodes não usados pela ALU
+            ADD, ADDI:  alu_out = a + b;
+            SUB, SUBI:  alu_out = a - b;
+            MUL:        alu_out = a * b;
+            default:    alu_out = 0; // outros opcodes não usados pela ALU
         endcase
     end
 
     // parte sequencial: registra resultado no clock
     always @(posedge clk or negedge rst) begin
-        if (!rst)
+        if (~rst)
             result <= 0;
         else
             result <= alu_out;
