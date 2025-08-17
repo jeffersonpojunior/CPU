@@ -1,106 +1,195 @@
-module control_unit(); // IMPLEMENTAÇÃO DO FETCH
+module module_mini_cpu(
+    // Saídas para a interface inicial na placa(opcional)
+    output reg LED_vermelho,
+    output reg LED_verde,
+    
+    // Saidas para a nossa ULA (ULA.v)
+    output reg [2:0] alu_op,
+    output reg signed [15:0] alu_op_a,
+    output reg signed [15:0] alu_op_b,
+    
+    // Saidas para o LCD
+    output reg [7:0] lcd_data_bus,
+    output reg lcd_rs,
+    output reg lcd_rw,
+    output reg lcd_e,
 
-// Estados da FSM do FETCH:
-reg [1:0] state, next_state;
-parameter S_IDLE    = 2'b00; // Estado inicial, esperando instrução
-parameter S_FETCH   = 2'b01; // Estado para buscar operandos
-parameter S_EXECUTE = 2'b10; // Estado para executar na ULA
-parameter S_STORE   = 2'b11; // Estado para salvar o resultado
+    // Entradas do meu modulo
+    input key_ligar,
+    input key_enviar,
+    input clk,
+    input reset,
+    input [17:0] instruction_input,    // Entrada "ao vivo" dos switches
+    input signed [15:0] alu_result      // Resultado vindo da ULA
+);
 
-// Registrador para a instrução atual
-// Latch da instrução dos switches
-reg [17:0] current_instruction;
+    // --- Estados da FSM ---
+    parameter State_off     = 4'b0000;
+    parameter Init          = 4'b0001;
+    parameter Fetch         = 4'b0010;
+    parameter Decode        = 4'b0011;
+    parameter Execute       = 4'b0100;
+    parameter Writeback     = 4'b0101;
+    parameter Special_Op    = 4'b0110;
 
-// --- Sinais para a Memória ---
-wire [3:0] mem_address_a;
-wire [3:0] mem_address_b;
-wire [15:0] mem_data_out_a; // Fio vindo da memória
-wire [15:0] mem_data_out_b; // Fio vindo da memória
+    reg [3:0] estado_atual;
 
-// --- Sinais para a ULA ---
-// Estes fios guardarão os operandos finais para a ULA
-reg [15:0] alu_operand_a;
-reg [15:0] alu_operand_b;
+    // --- Lógica de Botão ---
+    reg key_ligar_prev;
+    reg key_enviar_prev;
+    wire key_ligar_negedge = key_ligar_prev & ~key_ligar;
+    wire key_enviar_negedge = key_enviar_prev & ~key_enviar;
+    
+    // --- Contador para Delays ---
+    reg [15:0] counter;
+    parameter DELAY = 50_000; // Aprox. 1ms com clock de 50MHz
+
+    reg [17:0] current_instruction; // Registrador para a instrução atual
+
+    // --- Decodificação da Instrução ---
+    wire [2:0] opcode;
+    wire [3:0] reg_dest_inst;
+    wire [3:0] reg_src1_inst;
+    wire [3:0] reg_src2_inst;
+    wire [5:0] immediato;
+    wire       immediato_sinal;
+
+    // --- SINAIS INTERNOS DE CONTROLE PARA A MEMÓRIA ---
+    reg         reg_write;
+    reg [3:0]   reg_dest;
+    reg [3:0]   reg_src1;
+    reg [3:0]   reg_src2;
+    reg signed [15:0] reg_data_in;
+    reg         mem_clear; // Sinal para controlar a instrução CLEAR
+
+    // --- FIOS DE LIGAÇÃO (WIRES) PARA A INSTÂNCIA DA MEMÓRIA ---
+    wire signed [15:0] reg_data_out_a; // Dado vindo da porta A da memória
+    wire signed [15:0] reg_data_out_b; // Dado vindo da porta B da memória
+
+    // =================================================================
+    // ===          INSTÂNCIA DO MÓDULO DE MEMÓRIA                 ===
+    // =================================================================
+    memory a_memoria (
+        .clk(clk),
+        .reset(reset),
+        .clear(mem_clear), // Conectado ao nosso sinal de controle
+
+        .write_enable(reg_write),
+        .address_w(reg_dest),
+        .data_in_w(reg_data_in),
+
+        .address_a(reg_src1),
+        .data_out_a(reg_data_out_a),
+
+        .address_b(reg_src2),
+        .data_out_b(reg_data_out_b)
+    );
+    // =================================================================
 
 
-// Extrai os campos da instrução latched em 'current_instruction'
-wire [2:0] opcode = current_instruction[14:12]; // Exemplo para Tipo 1
-
-// Decodificação dos endereços dos registradores para instruções TIPO 1 (Reg-Reg)
-wire [3:0] dest_addr_t1 = current_instruction[11:8];
-wire [3:0] src1_addr_t1 = current_instruction[7:4];
-wire [3:0] src2_addr_t1 = current_instruction[3:0];
-
-// Decodificação para instruções TIPO 2 (Reg-Imm)
-wire [3:0] dest_addr_t2 = current_instruction[14:11];
-wire [3:0] src1_addr_t2 = current_instruction[10:7];
-wire [15:0] imm_val_t2  = { {9{current_instruction[6]}}, current_instruction[6], current_instruction[5:0] }; // Extensão de sinal
-
-
-//================================================================
-// LÓGICA DE FETCH (Parte da Máquina de Estados)
-//================================================================
-
-assign mem_address_a = (opcode == 3'b001 || opcode == 3'b011) ? src1_addr_t1 : // Se for ADD/SUB, usa src1_t1
-                       (opcode == 3'b010 || opcode == 3'b100 || opcode == 3'b101) ? src1_addr_t2 : // Se for ADDI/SUBI/MUL, usa src1_t2
-                       4'b0; // Valor padrão
-
-assign mem_address_b = (opcode == 3'b001 || opcode == 3'b011) ? src2_addr_t1 : // Se for ADD/SUB, usa src2_t1
-                       4'b0;
-
-// Preparação dos operandos para a ULA
-always @(*) begin
-    // Por padrão, o primeiro operando vem da memória
-    alu_operand_a = mem_data_out_a; 
-
-    // O segundo operando depende da instrução
-    case (opcode)
-        // Instruções Reg-Reg (ADD, SUB) usam a segunda saída da memória
-        3'b001, 3'b011: begin
-            alu_operand_b = mem_data_out_b;
+    // --- Lógica Sequencial (Transição de Estados) ---
+    always @(posedge clk or negedge reset) begin
+        if (!reset) begin // Assumindo reset ativo em baixo
+            estado_atual <= State_off;
+            key_ligar_prev <= 1'b0;
+            key_enviar_prev <= 1'b0;
+            counter <= 16'd0;
+            current_instruction <= 18'b0;
         end
-        // Instruções Reg-Imm (ADDI, SUBI, MUL) usam o valor imediato
-        3'b010, 3'b100, 3'b101: begin
-            alu_operand_b = imm_val_t2;
+        else begin
+            key_ligar_prev <= key_ligar;
+            key_enviar_prev <= key_enviar;
+            
+            case (estado_atual)
+                State_off: if (key_ligar_negedge) begin estado_atual <= Init; counter <= 16'd0; end
+                           else estado_atual <= State_off; 
+                Init: begin
+                    if (counter >= DELAY) begin estado_atual <= Fetch; counter <= 16'd0; end
+                    else begin estado_atual <= Init; counter <= counter + 1; end
+                end
+                Fetch: begin
+                    if (key_ligar_negedge) estado_atual <= State_off;
+                    else if (key_enviar_negedge) begin
+                        current_instruction <= instruction_input;
+                        estado_atual <= Decode;
+                    end
+                    else estado_atual <= Fetch;
+                end
+                Decode: begin
+                    if (current_instruction[17:15] == 3'b000) begin estado_atual <= Writeback; end // LOAD
+                    else if (current_instruction[17:15] == 3'b110 || current_instruction[17:15] == 3'b111) begin estado_atual <= Special_Op; counter <= 16'd0; end
+                    else begin estado_atual <= Execute; end
+                end
+                Execute:   estado_atual <= Writeback;
+                Writeback: estado_atual <= Fetch;
+                Special_Op: begin
+                    if (counter >= DELAY) begin estado_atual <= Fetch; counter <= 16'd0; end
+                    else begin estado_atual <= Special_Op; counter <= counter + 1;  end
+                end
+                default: estado_atual <= State_off;
+            endcase
         end
-        // Casos padrão
-        default: begin
-            alu_operand_b = 16'b0;
-        end
-    endcase
-end
+    end
 
-// Bloco sequencial para transição de estados
-always @(posedge clk or posedge reset) begin
-    if (reset)
-        state <= S_IDLE;
-    else
-        state <= next_state;
-end
+    // --- Parte Combinacional: Lógica de Decodificação ---
+    assign opcode = current_instruction[17:15];
+    assign reg_dest_inst = (opcode == 3'b001 || opcode == 3'b011) ? current_instruction[11:8]  : // TIPO 1: ADD, SUB
+                           (opcode == 3'b010 || opcode == 3'b100 || opcode == 3'b101) ? current_instruction[14:11] : // TIPO 2: ADDI, SUBI, MUL
+                           (opcode == 3'b000)                                      ? current_instruction[10:7]  : // TIPO 3: LOAD
+                           4'b0;
+    assign reg_src1_inst = (opcode == 3'b001 || opcode == 3'b011) ? current_instruction[7:4]   : // TIPO 1
+                           (opcode == 3'b010 || opcode == 3'b100 || opcode == 3'b101) ? current_instruction[10:7]  : // TIPO 2
+                           (opcode == 3'b111)                                      ? current_instruction[3:0]   : // TIPO SPECIAL: DISPLAY
+                           4'b0;
+    assign reg_src2_inst = (opcode == 3'b001 || opcode == 3'b011) ? current_instruction[3:0] : 4'b0;
+    assign immediato_sinal = (opcode == 3'b010 || opcode == 3'b100 || opcode == 3'b101) ? current_instruction[6] :
+                             (opcode == 3'b000)                                      ? current_instruction[6] :
+                             1'b0;
+    assign immediato = (opcode == 3'b010 || opcode == 3'b100 || opcode == 3'b101) ? current_instruction[5:0] :
+                       (opcode == 3'b000)                                      ? current_instruction[5:0] :
+                       6'b0;
 
-// Bloco combinacional para lógica de próximo estado
-always @(*) begin
-    next_state = state;
-    case (state)
-        S_IDLE: begin
-            if (send_button_pulse) begin
-                current_instruction <= instruction_from_switches; // Latch da entrada
-                next_state = S_FETCH;
+    // --- Lógica de Controle Principal (Saídas) ---
+    always @(*) begin
+        // Valores padrão
+        LED_vermelho = 1'b0; LED_verde = 1'b0; reg_write = 1'b0; mem_clear = 1'b0;
+        reg_dest = 4'b0; reg_src1 = 4'b0; reg_src2 = 4'b0;
+        alu_op = 3'b000; alu_op_a = 16'b0; alu_op_b = 16'b0;
+        reg_data_in = 16'b0; lcd_data_bus = 8'b0; lcd_rs = 1'b0;
+        lcd_rw = 1'b0; lcd_e = 1'b0;
+
+        case (estado_atual)
+            State_off: LED_vermelho = 1'b1;
+            Init:      LED_verde = 1'b1;
+            Fetch:     LED_verde = 1'b1;
+            Decode: begin
+                // Comanda a memória para colocar os dados dos regs. de origem nas saídas
+                reg_src1 = reg_src1_inst;
+                reg_src2 = reg_src2_inst;
             end
-        end
-        
-        S_FETCH: begin
-            next_state = S_EXECUTE;
-        end
-
-        S_EXECUTE: begin
-            // ... lógica de execução ...
-            next_state = S_STORE;
-        end
-
-        S_STORE: begin
-            // ... lógica de armazenamento ...
-            next_state = S_IDLE;
-        end
-    endcase
-end
+            Execute: begin
+                // A ULA recebe os dados que a memória forneceu (agora via fios internos)
+                alu_op = opcode;
+                alu_op_a = reg_data_out_a; // Operando A vem da porta A da memória
+                if (opcode == 3'b001 || opcode == 3'b011) // ADD, SUB (Reg-Reg)
+                    alu_op_b = reg_data_out_b; // Operando B vem da porta B da memória
+                else // ADDI, SUBI, MUL (Reg-Imm)
+                    alu_op_b = {{10{immediato_sinal}}, immediato};
+            end
+            Writeback: begin
+                reg_write = 1'b1;
+                reg_dest = reg_dest_inst;
+                if (opcode == 3'b000) // LOAD
+                    reg_data_in = {{10{immediato_sinal}}, immediato};
+                else // Para as outras (ADD, SUB, ADDI, etc.)
+                    reg_data_in = alu_result;
+            end
+            Special_Op: begin
+                if (opcode == 3'b110) // Se for a instrução CLEAR
+                    mem_clear = 1'b1; // Ativa o sinal para zerar a memória
+                // A lógica para a instrução DISPLAY no LCD seria implementada aqui
+            end
+            default: LED_vermelho = 1'b1;
+        endcase
+    end
+endmodule

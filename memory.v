@@ -1,41 +1,40 @@
 module memory (
-    input wire          clk,       
-    input wire          reset,       
-    input wire [3:0]    address,      // Endereço do registrador a ser acessado 
-    input wire [15:0]   data_in,      // Dado a ser escrito na memória
-    input wire          write_enable, // Sinal que habilita a operação de escrita (Store)
+    input wire clk,
+    input wire reset,
+    input wire clear,
 
-    output wire [15:0]  data_out      // Dado lido da memória (Fetch de Operando)
+    // Porta de escrita W
+    input wire          write_enable,  
+    input wire [3:0]    address_w,      
+    input wire [15:0]   data_in_w,      
+
+    // --- Porta de Leitura A ---
+    input wire [3:0]    address_a,      
+    output wire [15:0]  data_out_a,   
+
+    // --- Porta de Leitura B ---
+    input wire [3:0]    address_b,   
+    output wire [15:0]  data_out_b    
 );
 
-    //================================================================
-    // ARRAY DE REGISTRADORES DE 16 BITS
-    //================================================================
+    // Banco de registradores 16x16 bits
     reg [15:0] register_bank [0:15];
+    integer i;
 
-
-    //================================================================
-    // LÓGICA DE ESCRITA (STORE) E RESET (SÍNCRONA)
-    //================================================================
-    always @(posedge clk or posedge reset) begin
-        // Se o sinal de reset for ativado, zera todos os registradores. 
-        if (reset) begin
-            integer i; // Variável de laço para o for
+    // Lógica Síncrona para Escrita e reset
+    always @(posedge clk) begin
+        if (reset || clear) begin 
             for (i = 0; i < 16; i = i + 1) begin
                 register_bank[i] <= 16'b0;
             end
         end 
-        // Se o reset não estiver ativo e a escrita estiver habilitada,
-        // armazena o data_in no endereço especificado.
         else if (write_enable) begin
-            register_bank[address] <= data_in;
+            register_bank[address_w] <= data_in_w;
         end
     end
 
-
-    //================================================================
-    // LÓGICA DE LEITURA (FETCH DE OPERANDO) (COMBINACIONAL)
-    //================================================================
-    assign data_out = register_bank[address];
+    // Lógica Combinacional para as duas portas de leitura
+    assign data_out_a = register_bank[address_a];
+    assign data_out_b = register_bank[address_b];
 
 endmodule
