@@ -19,7 +19,7 @@ module top (
     wire [7:0] lcd_data_bus;
     wire lcd_rs_wire, lcd_e_wire;
 
-    mini_cpu_final cpu (
+    module_mini_cpu cpu (
         .LED_verde(LED_verde),
         .LED_vermelho(LED_vermelho),
         .alu_op(alu_op),
@@ -37,7 +37,7 @@ module top (
         .alu_result(alu_result)
     );
 
-    alu u_alu (
+    module_alu u_alu (
         .clk(clk),
         .rst(reset),
         .opcode(alu_op),

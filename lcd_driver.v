@@ -7,8 +7,8 @@ module lcd_driver (
     reg [2:0] state,next_state;
     reg [7:0] data_reg;
     reg [15:0] counter; parameter DELAY=50000;
-    always @(posedge clk or posedge reset) begin
-        if(reset) begin state<=IDLE; counter<=0; lcd_e<=0; lcd_rs<=0; lcd_data<=0; ready<=1; end
+    always @(posedge clk or negedge reset) begin
+        if(!reset) begin state<=IDLE; counter<=0; lcd_e<=0; lcd_rs<=0; lcd_data<=0; ready<=1; end
         else begin state<=next_state;
             case(state)
                 IDLE: begin lcd_e<=0; if(clear) begin data_reg<=8'h01; ready<=0; end else if(data_valid) begin data_reg<=data_in; ready<=0; end end
