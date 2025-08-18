@@ -10,24 +10,57 @@ module memory (
 
     // --- Porta de Leitura A ---
     input wire [3:0]    address_a,      
-    output wire [15:0]  data_out_a,   
+    output wire [15:0]  data_out_a,  
 
     // --- Porta de Leitura B ---
-    input wire [3:0]    address_b,   
+    input wire [3:0]    address_b,  
     output wire [15:0]  data_out_b    
 );
 
     // Banco de registradores 16x16 bits
     reg [15:0] register_bank [0:15];
     integer i;
-
+		
+	// Inicializando o banco de registradores:
+	initial begin
+		register_bank[0] <= 16'b0;
+		register_bank[1] <= 16'b0;
+		register_bank[2] <= 16'b0;
+		register_bank[3] <= 16'b0;
+		register_bank[4] <= 16'b0;
+		register_bank[5] <= 16'b0;
+		register_bank[6] <= 16'b0;
+		register_bank[7] <= 16'b0;
+		register_bank[8] <= 16'b0;
+		register_bank[9] <= 16'b0;
+		register_bank[10] <= 16'b0;
+		register_bank[11] <= 16'b0;
+		register_bank[12] <= 16'b0;
+		register_bank[13] <= 16'b0;
+		register_bank[14] <= 16'b0;
+		register_bank[15] <= 16'b0;
+	 end
+	
     // Lógica Síncrona para Escrita e reset
     always @(posedge clk) begin
-        if (reset || clear) begin 
-            for (i = 0; i < 16; i = i + 1) begin
-                register_bank[i] <= 16'b0;
-            end
-        end 
+        if (reset || clear) begin
+            register_bank[0] <= 16'b0;
+            register_bank[1] <= 16'b0;
+            register_bank[2] <= 16'b0;
+            register_bank[3] <= 16'b0;
+            register_bank[4] <= 16'b0;
+            register_bank[5] <= 16'b0;
+            register_bank[6] <= 16'b0;
+            register_bank[7] <= 16'b0;
+            register_bank[8] <= 16'b0;
+            register_bank[9] <= 16'b0;
+            register_bank[10] <= 16'b0;
+            register_bank[11] <= 16'b0;
+            register_bank[12] <= 16'b0;
+            register_bank[13] <= 16'b0;
+            register_bank[14] <= 16'b0;
+            register_bank[15] <= 16'b0;
+        end
         else if (write_enable) begin
             register_bank[address_w] <= data_in_w;
         end
