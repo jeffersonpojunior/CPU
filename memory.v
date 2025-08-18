@@ -19,7 +19,6 @@ module memory (
 
     // Banco de registradores 16x16 bits
     reg [15:0] register_bank [0:15];
-    integer i;
 		
 	// Inicializando o banco de registradores:
 	initial begin
